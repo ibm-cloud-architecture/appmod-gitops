@@ -1,0 +1,131 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: cos-liberty
+  namespace: cos-liberty-dev
+  annotations:
+    description: The web server's http port.
+  labels:
+    application: cos-liberty
+spec:
+  ports:
+    - name: 9080-tcp
+      port: 9080
+      targetPort: 9080
+      protocol: TCP
+    - name: 9443-tcp
+      port: 9443
+      targetPort: 9443
+      protocol: TCP
+    - name: http
+      port: 9082
+      targetPort: 9082
+      protocol: TCP
+  selector:
+    deploymentConfig: cos-liberty
+  type: ClusterIP
+  sessionAffinity: None
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: cos-liberty
+  namespace: cos-liberty-dev
+  labels:
+    application: cos-liberty
+spec:
+  to:
+    kind: Service
+    name: cos-liberty
+    weight: 100
+  port:
+    targetPort: 9443-tcp
+  tls:
+    termination: passthrough
+  wildcardPolicy: None
+---
+kind: DeploymentConfig
+apiVersion: apps.openshift.io/v1
+metadata:
+  name: cos-liberty
+  namespace: cos-liberty-dev
+  labels:
+    application: cos-liberty
+spec:
+  strategy:
+    type: Rolling    
+    rollingParams:
+      intervalSeconds: 1
+      maxSurge: 25%
+      maxUnavailable: 25%
+      timeoutSeconds: 600
+      updatePeriodSeconds: 1
+    resources: {}
+  selector:
+    application: cos-liberty
+    deploymentConfig: cos-liberty
+  replicas: 1
+  triggers:
+    - type: ConfigChange
+  template:
+    metadata:
+      labels:
+        application: cos-liberty
+        deploymentConfig: cos-liberty
+      name: cos-liberty
+    spec:
+      containers:
+        - name: cos-liberty
+          env:
+            - name: DB2_HOST
+              value: db2.db2.svc
+            - name: DB2_PORT
+              value: "50000"
+            - name: DB2_DBNAME
+              value: ORDERDB
+            - name: DB2_USER
+              value: db2inst1
+            - name: DB2_PASSWORD
+              value: db2inst1
+          image: image-registry.openshift-image-registry.svc:5000/cos-liberty-tekton/cos-liberty:7e300fc
+          imagePullPolicy: Always
+          livenessProbe:
+            tcpSocket:
+              port: 9443
+            initialDelaySeconds: 45
+            periodSeconds: 45
+            successThreshold: 1
+            timeoutSeconds: 1
+            failureThreshold: 3
+          ports:
+            - containerPort: 9080
+              name: 9080-tcp
+              protocol: TCP
+            - containerPort: 9443
+              name: 9443-tcp
+              protocol: TCP
+            - containerPort: 9082
+              name: http
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 9443
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+            failureThreshold: 3
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+      terminationGracePeriodSeconds: 60
+      dnsPolicy: ClusterFirst
+      serviceAccountName: websphere
+      serviceAccount: websphere
+      securityContext:
+        runAsUser: 1001
+        runAsNonRoot: true
